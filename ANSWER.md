@@ -110,7 +110,6 @@ def recruiter_review(state: dict) -> dict:
 
 Полный список точек ожидания:
 
-
 | Нода | Кто отвечает | Что система отправила до этого |
 |---|---|---|
 | `recruiter_review` | Recruiter | Slack: AI score + summary кандидата |
@@ -351,7 +350,7 @@ def score_cv(cv_text: str, job_title: str, job_requirements: str) -> CVScore:
         HumanMessage(content=cv_text),
     ])
 
-# Pydantic схема — src/schemas.py#L13
+# Pydantic схема — src/schemas.py:13
 class CVScore(BaseModel):
     score: int = Field(ge=0, le=100)
     reasoning: str
