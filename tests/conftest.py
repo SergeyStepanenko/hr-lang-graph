@@ -1,6 +1,9 @@
 import pytest
+from dotenv import load_dotenv
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
+
+load_dotenv()
 
 from src.models import Candidate, Clock, Job
 
