@@ -17,7 +17,9 @@ def _get_llm() -> ChatOpenAI:
 
 
 def parse_cv_contact(cv_text: str) -> CandidateContact:
-    chain = _get_llm().with_structured_output(CandidateContact)
+    chain = _get_llm().with_structured_output(CandidateContact).with_config(
+        run_name="Extract Contact Info from CV"
+    )
     return chain.invoke([
         SystemMessage(content=(
             "Extract contact information from this CV. "
@@ -30,7 +32,9 @@ def parse_cv_contact(cv_text: str) -> CandidateContact:
 
 
 def score_cv(cv_text: str, job_title: str, job_requirements: str) -> CVScore:
-    chain = _get_llm().with_structured_output(CVScore)
+    chain = _get_llm().with_structured_output(CVScore).with_config(
+        run_name=f"Score CV for: {job_title}"
+    )
     return chain.invoke([
         SystemMessage(content=(
             f"You are an HR screening assistant. Score this CV for the position: {job_title}.\n"
@@ -42,7 +46,7 @@ def score_cv(cv_text: str, job_title: str, job_requirements: str) -> CVScore:
 
 
 def gen_summary(cv_text: str, score: CVScore) -> str:
-    response = _get_llm().invoke([
+    response = _get_llm().with_config(run_name="Generate Recruiter Summary").invoke([
         SystemMessage(content="Write a brief (3-5 sentence) summary for a recruiter reviewing this candidate."),
         HumanMessage(content=(
             f"CV:\n{cv_text}\n\n"
@@ -56,7 +60,7 @@ def gen_summary(cv_text: str, score: CVScore) -> str:
 
 
 def gen_offer(candidate_name: str, job_title: str) -> str:
-    response = _get_llm().invoke([
+    response = _get_llm().with_config(run_name=f"Generate Offer Letter: {candidate_name}").invoke([
         SystemMessage(content="Draft a professional job offer letter. Keep it concise (1 paragraph + key terms)."),
         HumanMessage(content=f"Candidate: {candidate_name}\nPosition: {job_title}"),
     ])
@@ -64,7 +68,7 @@ def gen_offer(candidate_name: str, job_title: str) -> str:
 
 
 def gen_rejection(candidate_name: str, reason: str) -> str:
-    response = _get_llm().invoke([
+    response = _get_llm().with_config(run_name=f"Generate Rejection Email: {candidate_name}").invoke([
         SystemMessage(content="Write a professional, empathetic rejection email. Brief, 2-3 sentences."),
         HumanMessage(content=f"Candidate: {candidate_name}\nReason: {reason}"),
     ])
