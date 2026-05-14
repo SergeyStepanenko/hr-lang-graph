@@ -67,7 +67,7 @@ Recruiting flow — **долгоживущий и многоучастников
 
 Правило агрегации: **все должны одобрить** → `stage = "interview"`; **любой вето** → rejection email кандидату + `END`.
 
-**Код fan-out** [src/workflow.py:48](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L48):
+**Код fan-out** [src/workflow.py:48-70](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L48-L70):
 
 ```python
 def route_after_recruiter(state: RecruitingState) -> list[Send] | str:
@@ -81,7 +81,7 @@ def route_after_recruiter(state: RecruitingState) -> list[Send] | str:
     ]
 ```
 
-**Код fan-in** (reducer-аккумулятор) [src/workflow.py:29](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29):
+**Код fan-in** (reducer-аккумулятор) [src/workflow.py:29-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29-L45):
 
 ```python
 class RecruitingState(TypedDict, total=False):
@@ -92,7 +92,7 @@ class RecruitingState(TypedDict, total=False):
 
 7 точек прерывания — `interrupt()` внутри ноды останавливает граф, сериализует стейт в SQLite, освобождает поток. Граф не «спит» — ждёт HTTP-запроса, который может прийти через часы или недели.
 
-**Как это выглядит в коде** [src/nodes.py:90](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L90):
+**Как это выглядит в коде** [src/nodes.py:90-133](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L90-L133):
 
 ```python
 def recruiter_review(state: dict) -> dict:
@@ -131,12 +131,12 @@ def recruiter_review(state: dict) -> dict:
 
 | Шаг | Что делает AI | Код |
 |---|---|---|
-| **CV Parsing** | Извлекает name, email, phone, telegram, linkedin из произвольного текста. Structured output → Pydantic `CandidateContact`. Если email не найден → флаг `no_contact`, email-коммуникации с кандидатом отключаются. | [src/llm.py:19](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L19) |
-| **CV Scoring** | Оценка 0–100 с reasoning, strengths, red_flags относительно требований конкретной вакансии. Structured output → `CVScore`. | [src/llm.py:34](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L34) |
-| **Recruiter Summary** | 3–5 предложений о кандидате для быстрого принятия решения. | [src/llm.py:48](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L48) |
-| **Offer Draft** | Персонализированный текст job offer letter — имя кандидата + позиция. | [src/llm.py:62](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L62) |
-| **Rejection Email** | Профессиональный эмпатичный отказ с учётом причины. Внутренние формулировки ("too junior") не попадают в текст письма кандидату. | [src/llm.py:70](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L70) |
-| **Approval aggregation** | Детерминированная логика без LLM: ALL approved → interview, ANY rejected → veto + rejection. | [src/nodes.py:174](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L174) |
+| **CV Parsing** | Извлекает name, email, phone, telegram, linkedin из произвольного текста. Structured output → Pydantic `CandidateContact`. Если email не найден → флаг `no_contact`, email-коммуникации с кандидатом отключаются. | [src/llm.py:19-31](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L19-L31) |
+| **CV Scoring** | Оценка 0–100 с reasoning, strengths, red_flags относительно требований конкретной вакансии. Structured output → `CVScore`. | [src/llm.py:34-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L34-L45) |
+| **Recruiter Summary** | 3–5 предложений о кандидате для быстрого принятия решения. | [src/llm.py:48-59](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L48-L59) |
+| **Offer Draft** | Персонализированный текст job offer letter — имя кандидата + позиция. | [src/llm.py:62-67](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L62-L67) |
+| **Rejection Email** | Профессиональный эмпатичный отказ с учётом причины. Внутренние формулировки ("too junior") не попадают в текст письма кандидату. | [src/llm.py:70-75](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L70-L75) |
+| **Approval aggregation** | Детерминированная логика без LLM: ALL approved → interview, ANY rejected → veto + rejection. | [src/nodes.py:174-207](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L174-L207) |
 
 ### Где нужен человек
 
@@ -155,7 +155,7 @@ def recruiter_review(state: dict) -> dict:
 
 Граф использует **conditional edges** — функции-роутеры, которые читают `state["stage"]` и возвращают имя следующей ноды (или `END`). Единственный источник правды — поле `stage`. Каждая нода возвращает `{"stage": "..."}`, роутер переходит дальше.
 
-**Код роутеров** [src/workflow.py:73](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L73):
+**Код роутеров** [src/workflow.py:73-78](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L73-L78):
 
 ```python
 def route_after_aggregate(state: RecruitingState) -> str:
@@ -181,7 +181,7 @@ def route_after_scorecard(state: RecruitingState) -> str:
 
 **Принципиально важно**: граф **не принимает автоматических решений при таймауте** — только напоминает. HR-решения требуют человеческого суждения, автоматический reject из-за задержки недопустим.
 
-**Код nudge** [src/app.py:63](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/app.py#L63):
+**Код nudge** [src/app.py:63-78](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/app.py#L63-L78):
 
 ```python
 def _check_nudges(session, current_day: int):
@@ -202,7 +202,7 @@ def _check_nudges(session, current_day: int):
 
 Если `parse_cv_contact` не нашёл email → `no_contact = True`. Все `send_email()` для кандидата пропускаются условно. Workflow продолжается полностью — только без email-коммуникаций с кандидатом.
 
-**Код** [src/nodes.py:38](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L38):
+**Код** [src/nodes.py:38-62](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L38-L62):
 
 ```python
 no_contact = contact.email is None
@@ -214,11 +214,11 @@ else:
 
 #### Ошибки запуска workflow
 
-`try/except` в `/apply`: если `start_workflow` падает (сеть, API), ошибка пишется в `audit_log`, кандидат сохраняется в БД. **Код** [src/app.py:161](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/app.py#L161).
+`try/except` в `/apply`: если `start_workflow` падает (сеть, API), ошибка пишется в `audit_log`, кандидат сохраняется в БД. **Код** [src/app.py:161-169](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/app.py#L161-L169).
 
 #### Персистентность после рестарта сервера
 
-`SqliteSaver` как checkpointer: стейт каждого workflow сериализован в `data/checkpoints.db`. Сервер перезапускается — граф продолжает с последней контрольной точки без потери данных. **Код** [src/workflow.py:144](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L144).
+`SqliteSaver` как checkpointer: стейт каждого workflow сериализован в `data/checkpoints.db`. Сервер перезапускается — граф продолжает с последней контрольной точки без потери данных. **Код** [src/workflow.py:144-154](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L144-L154).
 
 ---
 
@@ -264,7 +264,7 @@ tests/
 
 #### Стейт и resume через HTTP
 
-[src/workflow.py:29](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29):
+[src/workflow.py:29-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29-L45):
 
 ```python
 class RecruitingState(TypedDict, total=False):
@@ -278,7 +278,7 @@ class RecruitingState(TypedDict, total=False):
     last_action_day: int
 ```
 
-[src/workflow.py:189](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L189) — resume после человеческого решения:
+[src/workflow.py:189-216](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L189-L216) — resume после человеческого решения:
 
 ```python
 def resume_workflow(thread_id: str, decision: str, resume_map: dict | None = None, ...) -> dict:
@@ -292,7 +292,7 @@ def resume_workflow(thread_id: str, decision: str, resume_map: dict | None = Non
 
 #### interrupt в ноде → решение человека → продолжение
 
-[src/nodes.py:90](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L90):
+[src/nodes.py:90-133](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L90-L133):
 
 ```python
 def recruiter_review(state: dict) -> dict:
@@ -311,7 +311,7 @@ def recruiter_review(state: dict) -> dict:
 
 #### Параллельный approval с fan-in
 
-[src/nodes.py:148](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L148):
+[src/nodes.py:148-171](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L148-L171):
 
 ```python
 def _do_approval(state: dict, role: str) -> dict:
@@ -322,7 +322,7 @@ def _do_approval(state: dict, role: str) -> dict:
     return {"approval_results": [{"approver": role, "approval_decision": human_decision, ...}]}
 ```
 
-[src/nodes.py:174](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L174):
+[src/nodes.py:174-207](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L174-L207):
 
 ```python
 def aggregate_approvals(state: dict) -> dict:
@@ -338,7 +338,7 @@ def aggregate_approvals(state: dict) -> dict:
 
 #### LLM scoring со structured output
 
-[src/llm.py:34](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L34):
+[src/llm.py:34-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L34-L45):
 
 ```python
 def score_cv(cv_text: str, job_title: str, job_requirements: str) -> CVScore:
@@ -362,7 +362,7 @@ class CVScore(BaseModel):
 
 Два слоя: **heuristic** (детерминированные assertions) + **LLM-as-judge** (второй LLM оценивает качество первого).
 
-[tests/test_evals.py:59](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/tests/test_evals.py#L59):
+[tests/test_evals.py:59-68](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/tests/test_evals.py#L59-L68):
 
 ```python
 def llm_judge(judge, question: str, context: str) -> bool:
@@ -385,7 +385,7 @@ def test_does_not_reveal_internal_reason_verbatim(self, judge):
 
 > *«Весь флоу должен быть контролируемым и прозрачным, независимо от того, выполняется ли он автоматически, ожидает наступления события в будущем или требует действий со стороны пользователя.»*
 
-Каждое действие — и автоматическое, и человеческое — пишется в `audit.jsonl` через [src/comms.py:78](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/comms.py#L78):
+Каждое действие — и автоматическое, и человеческое — пишется в `audit.jsonl` через [src/comms.py:78-113](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/comms.py#L78-L113):
 
 ```json
 {"event": "cv_scored",              "actor": "ai",        "reasoning": "Score: 87/100", "clock_day": 0}
