@@ -180,11 +180,32 @@ def human_action(
         return RedirectResponse(url="/", status_code=303)
 
     try:
+        # resolve node name from current interrupt list
+        node_name = "action"
+        if interrupt_id:
+            ws = workflow.get_workflow_state(candidate.thread_id)
+            if ws:
+                for intr in ws.get("interrupts", []):
+                    if intr.get("id") == interrupt_id:
+                        node_name = intr.get("node", "action")
+                        break
+
+        candidate_label = candidate.name or f"candidate #{candidate_id}"
+
         if interrupt_id:
             resume_map = {interrupt_id: {"decision": decision, "comment": comment}}
-            workflow.resume_workflow(candidate.thread_id, decision, comment, resume_map=resume_map)
+            workflow.resume_workflow(
+                candidate.thread_id, decision, comment,
+                resume_map=resume_map,
+                node_name=node_name,
+                candidate_name=candidate_label,
+            )
         else:
-            workflow.resume_workflow(candidate.thread_id, decision, comment)
+            workflow.resume_workflow(
+                candidate.thread_id, decision, comment,
+                node_name=node_name,
+                candidate_name=candidate_label,
+            )
     except Exception as e:
         comms.audit_log(session, candidate.id, "workflow_resume_error", "system", str(e))
 
@@ -203,13 +224,17 @@ def inbox(request: Request, session: Session = Depends(get_session)):
 @app.get("/logs", response_class=HTMLResponse)
 def logs(request: Request, session: Session = Depends(get_session)):
     logs_dir = Path(__file__).parent.parent / "logs"
-    log_files = []
+    all_files = []
     for subdir in ["emails", "slack"]:
         d = logs_dir / subdir
         if d.exists():
-            for f in sorted(d.iterdir(), reverse=True):
+            for f in d.iterdir():
                 if f.suffix == ".md":
-                    log_files.append({"name": f"{subdir}/{f.name}", "content": f.read_text()})
+                    all_files.append((f.name, subdir, f))
+    log_files = [
+        {"name": f"{subdir}/{f.name}", "content": f.read_text()}
+        for _, subdir, f in sorted(all_files, key=lambda x: x[0], reverse=True)
+    ]
 
     audit_file = logs_dir / "audit.jsonl"
     audit_lines = []

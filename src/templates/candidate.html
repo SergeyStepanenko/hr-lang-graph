@@ -26,8 +26,8 @@
         </div>
         {% endif %}
 
-        {% if workflow_state and workflow_state.values %}
-        {% set wv = workflow_state.values %}
+        {% if workflow_state and workflow_state['values'] %}
+        {% set wv = workflow_state['values'] %}
         {% if wv.get('score') %}
         <div class="card mb-3">
             <div class="card-header">AI Score</div>

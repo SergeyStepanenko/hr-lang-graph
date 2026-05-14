@@ -7,7 +7,9 @@
     </form>
 </div>
 {% set s = focus_candidate.stage %}
-{% set approvals = focus_state.values.get('approvals', {}) if focus_state.values else {} %}
+{% set approvals = focus_state['values'].get('approvals', {}) if focus_state['values'] else {} %}
+{% set approval_results = focus_state['values'].get('approval_results', []) if focus_state['values'] else [] %}
+{% for r in approval_results %}{% set _ = approvals.update({r.approver: r.approval_decision}) %}{% endfor %}
 {% set pending = focus_state.next if focus_state else [] %}
 <pre class="mermaid">
 graph LR

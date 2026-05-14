@@ -18,6 +18,16 @@ def intake(state: dict) -> dict:
 
     with Session(engine) as session:
         candidate = session.get(Candidate, candidate_id)
+        if candidate is None:
+            candidate = Candidate(
+                id=candidate_id,
+                cv_text=cv_text,
+                job_id=state.get("job_id", 1),
+                thread_id=state.get("thread_id", ""),
+                stage="intake",
+            )
+            session.add(candidate)
+            session.flush()
         candidate.name = contact.name
         candidate.email = contact.email
         candidate.phone = contact.phone

@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "recruiting": "./src/workflow.py:create_studio_graph"
+  },
+  "env": ".env"
+}

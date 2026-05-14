@@ -37,6 +37,9 @@ logs/
 .DS_Store
 Thumbs.db
 
+# LangGraph Studio
+.langgraph_api/
+
 # IDE
 .idea/
 .vscode/

@@ -162,9 +162,19 @@ def get_graph():
     return _compiled
 
 
+def create_studio_graph():
+    """Entry point for LangGraph Studio (langgraph dev). Uses in-memory checkpointer."""
+    from langgraph.checkpoint.memory import MemorySaver
+    return build_graph().compile(checkpointer=MemorySaver())
+
+
 def start_workflow(candidate_id: int, job_id: int, cv_text: str, thread_id: str) -> dict:
     graph = get_graph()
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "run_name": f"CV Submit — candidate #{candidate_id}",
+        "metadata": {"candidate_id": candidate_id, "job_id": job_id, "thread_id": thread_id},
+    }
     initial = RecruitingState(
         candidate_id=candidate_id,
         job_id=job_id,
@@ -176,14 +186,27 @@ def start_workflow(candidate_id: int, job_id: int, cv_text: str, thread_id: str)
     return result
 
 
-def resume_workflow(thread_id: str, decision: str, comment: str = "", resume_map: dict | None = None) -> dict:
+def resume_workflow(
+    thread_id: str,
+    decision: str,
+    comment: str = "",
+    resume_map: dict | None = None,
+    node_name: str = "action",
+    candidate_name: str = "",
+) -> dict:
     """Resume workflow after interrupt.
 
     For single interrupt: pass decision + comment.
     For multiple interrupts: pass resume_map {interrupt_id: {decision, comment}}.
     """
     graph = get_graph()
-    config = {"configurable": {"thread_id": thread_id}}
+
+    label = candidate_name or thread_id[:8]
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "run_name": f"{label} — {node_name}: {decision}",
+        "metadata": {"thread_id": thread_id, "decision": decision, "node": node_name},
+    }
 
     if resume_map:
         result = graph.invoke(Command(resume=resume_map), config=config)
@@ -215,6 +238,25 @@ def get_workflow_state(thread_id: str) -> dict | None:
                     elif hasattr(t, "name") and t.name:
                         if not any(i["node"] == t.name for i in interrupts):
                             pending.append(t.name)
+
+            # Filter out approval interrupts already recorded in approval_results
+            completed_approvers = {
+                r["approver"] for r in snapshot.values.get("approval_results", [])
+            }
+            interrupts = [
+                i for i in interrupts
+                if not (
+                    i["node"].startswith("approval_")
+                    and i["node"].replace("approval_", "") in completed_approvers
+                )
+            ]
+            pending = [
+                p for p in pending
+                if not (
+                    p.startswith("approval_")
+                    and p.replace("approval_", "") in completed_approvers
+                )
+            ]
 
             if not pending and snapshot.next:
                 pending = list(snapshot.next)
