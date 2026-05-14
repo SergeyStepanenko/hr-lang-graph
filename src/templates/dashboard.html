@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h4>Candidates</h4>
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Stage</th>
+                    <th>Status</th>
+                    <th>Email</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in candidates %}
+                <tr>
+                    <td>{{ c.id }}</td>
+                    <td>{{ c.name or "—" }}</td>
+                    <td><span class="stage-badge stage-{{ c.stage }}">{{ c.stage }}</span></td>
+                    <td>
+                        {% if c.status == 'hired' %}<span class="badge bg-success">hired</span>
+                        {% elif c.status == 'rejected' %}<span class="badge bg-danger">rejected</span>
+                        {% else %}<span class="badge bg-primary">active</span>{% endif %}
+                    </td>
+                    <td>{{ c.email or "—" }}</td>
+                    <td><a href="/candidate/{{ c.id }}" class="btn btn-sm btn-outline-primary">View</a></td>
+                </tr>
+                {% endfor %}
+                {% if not candidates %}
+                <tr><td colspan="6" class="text-center text-muted">No candidates yet</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="col-md-4">
+        {% if role == 'candidate' %}
+        <div class="card mb-3">
+            <div class="card-header bg-success text-white">Apply for a Job</div>
+            <div class="card-body">
+                <form method="post" action="/apply">
+                    <div class="mb-3">
+                        <label class="form-label">Position</label>
+                        <select name="job_id" class="form-select">
+                            {% for j in jobs %}
+                            <option value="{{ j.id }}">{{ j.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Paste your CV</label>
+                        <textarea name="cv_text" class="form-control" rows="8" required placeholder="Paste CV text here..."></textarea>
+                    </div>
+                    <button class="btn btn-success w-100">Submit Application</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if pending_actions %}
+        <div class="card mb-3">
+            <div class="card-header bg-warning">⚡ My Pending Actions ({{ role|upper }})</div>
+            <div class="card-body">
+                {% for pa in pending_actions %}
+                <div class="border rounded p-2 mb-2">
+                    <strong>{{ pa.candidate.name or ('Candidate #' ~ pa.candidate.id) }}</strong>
+                    <span class="stage-badge stage-{{ pa.candidate.stage }}">{{ pa.candidate.stage }}</span>
+                    <br>
+                    <small class="text-muted">Action: {{ pa.node }}</small>
+                    <div class="mt-1">
+                        <a href="/candidate/{{ pa.candidate.id }}" class="btn btn-sm btn-primary">Handle →</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

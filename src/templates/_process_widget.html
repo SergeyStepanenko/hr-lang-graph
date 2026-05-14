@@ -1,0 +1,110 @@
+{% if focus_candidate and focus_state %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <strong>Pipeline: {{ focus_candidate.name }} ({{ focus_candidate.stage }})</strong>
+    <form method="post" action="/set-focus" class="d-inline">
+        <input type="hidden" name="candidate_id" value="">
+        <button class="btn btn-outline-secondary btn-sm">← Back to Overview</button>
+    </form>
+</div>
+{% set s = focus_candidate.stage %}
+{% set approvals = focus_state.values.get('approvals', {}) if focus_state.values else {} %}
+{% set pending = focus_state.next if focus_state else [] %}
+<pre class="mermaid">
+graph LR
+    INTAKE["Intake"]
+    SCREENING["Screening"]
+    HM["HM Approval"]
+    CFO["CFO Approval"]
+    LEGAL["Legal Approval"]
+    INTERVIEW["Interview"]
+    OFFER["Offer"]
+    RESULT["Result"]
+
+    INTAKE --> SCREENING
+    SCREENING --> HM
+    SCREENING --> CFO
+    SCREENING --> LEGAL
+    HM --> INTERVIEW
+    CFO --> INTERVIEW
+    LEGAL --> INTERVIEW
+    INTERVIEW --> OFFER
+    OFFER --> RESULT
+
+    {% if s == 'intake' %}
+    style INTAKE fill:#ffc107,stroke:#856404,stroke-width:2px
+    {% elif s in ('screening',) %}
+    style INTAKE fill:#198754,stroke:#fff
+    style SCREENING fill:#ffc107,stroke:#856404,stroke-width:2px
+    {% elif s == 'approvals' %}
+    style INTAKE fill:#198754,stroke:#fff
+    style SCREENING fill:#198754,stroke:#fff
+    {% if approvals.get('hm') == 'approved' %}style HM fill:#198754,stroke:#fff{% elif approvals.get('hm') == 'rejected' %}style HM fill:#dc3545,stroke:#fff{% else %}style HM fill:#ffc107,stroke:#856404,stroke-width:2px{% endif %}
+    {% if approvals.get('cfo') == 'approved' %}style CFO fill:#198754,stroke:#fff{% elif approvals.get('cfo') == 'rejected' %}style CFO fill:#dc3545,stroke:#fff{% else %}style CFO fill:#ffc107,stroke:#856404,stroke-width:2px{% endif %}
+    {% if approvals.get('legal') == 'approved' %}style LEGAL fill:#198754,stroke:#fff{% elif approvals.get('legal') == 'rejected' %}style LEGAL fill:#dc3545,stroke:#fff{% else %}style LEGAL fill:#ffc107,stroke:#856404,stroke-width:2px{% endif %}
+    {% elif s == 'interview' %}
+    style INTAKE fill:#198754,stroke:#fff
+    style SCREENING fill:#198754,stroke:#fff
+    style HM fill:#198754,stroke:#fff
+    style CFO fill:#198754,stroke:#fff
+    style LEGAL fill:#198754,stroke:#fff
+    style INTERVIEW fill:#ffc107,stroke:#856404,stroke-width:2px
+    {% elif s == 'offer' %}
+    style INTAKE fill:#198754,stroke:#fff
+    style SCREENING fill:#198754,stroke:#fff
+    style HM fill:#198754,stroke:#fff
+    style CFO fill:#198754,stroke:#fff
+    style LEGAL fill:#198754,stroke:#fff
+    style INTERVIEW fill:#198754,stroke:#fff
+    style OFFER fill:#ffc107,stroke:#856404,stroke-width:2px
+    {% elif s == 'hired' %}
+    style INTAKE fill:#198754,stroke:#fff
+    style SCREENING fill:#198754,stroke:#fff
+    style HM fill:#198754,stroke:#fff
+    style CFO fill:#198754,stroke:#fff
+    style LEGAL fill:#198754,stroke:#fff
+    style INTERVIEW fill:#198754,stroke:#fff
+    style OFFER fill:#198754,stroke:#fff
+    style RESULT fill:#198754,stroke:#fff
+    {% elif s == 'rejected' %}
+    style RESULT fill:#dc3545,stroke:#fff
+    {% endif %}
+</pre>
+{% if pending %}
+<div class="small text-muted">⏳ Waiting for: {{ pending | join(', ') }}</div>
+{% endif %}
+
+{% else %}
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <strong>Pipeline Overview</strong>
+    {% if active_candidates %}
+    <form method="post" action="/set-focus" class="d-inline">
+        <select name="candidate_id" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
+            <option value="">Focus on case ▾</option>
+            {% for c in active_candidates %}
+            <option value="{{ c.id }}">{{ c.name or ('Candidate #' ~ c.id) }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    {% endif %}
+</div>
+<pre class="mermaid">
+graph LR
+    INTAKE["Intake ({{ stage_counts.get('intake', 0) }})"]
+    SCREENING["Screening ({{ stage_counts.get('screening', 0) }})"]
+    APPROVALS["Approvals ({{ stage_counts.get('approvals', 0) }})"]
+    INTERVIEW["Interview ({{ stage_counts.get('interview', 0) }})"]
+    OFFER["Offer ({{ stage_counts.get('offer', 0) }})"]
+    HIRED["Hired ({{ stage_counts.get('hired', 0) }})"]
+    REJECTED["Rejected ({{ stage_counts.get('rejected', 0) }})"]
+
+    INTAKE --> SCREENING --> APPROVALS --> INTERVIEW --> OFFER --> HIRED
+    SCREENING -.-> REJECTED
+    APPROVALS -.-> REJECTED
+    INTERVIEW -.-> REJECTED
+    OFFER -.-> REJECTED
+
+    {% if stage_counts.get('hired', 0) > 0 %}style HIRED fill:#198754,stroke:#fff,color:#fff{% endif %}
+    {% if stage_counts.get('rejected', 0) > 0 %}style REJECTED fill:#dc3545,stroke:#fff,color:#fff{% endif %}
+</pre>
+{% endif %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h4>
+            {{ candidate.name or ('Candidate #' ~ candidate.id) }}
+            <span class="stage-badge stage-{{ candidate.stage }}">{{ candidate.stage }}</span>
+            {% if candidate.status == 'hired' %}<span class="badge bg-success">hired</span>{% endif %}
+            {% if candidate.status == 'rejected' %}<span class="badge bg-danger">rejected</span>{% endif %}
+        </h4>
+        <div class="mb-3">
+            <small class="text-muted">
+                Email: {{ candidate.email or "—" }} |
+                Phone: {{ candidate.phone or "—" }} |
+                Telegram: {{ candidate.telegram or "—" }} |
+                LinkedIn: {{ candidate.linkedin or "—" }}
+                {% if candidate.no_contact %}<span class="badge bg-warning">No Contact</span>{% endif %}
+            </small>
+        </div>
+
+        {% if candidate.cv_text %}
+        <div class="card mb-3">
+            <div class="card-header">CV Text</div>
+            <div class="card-body"><pre style="white-space:pre-wrap; font-size:0.85rem;">{{ candidate.cv_text }}</pre></div>
+        </div>
+        {% endif %}
+
+        {% if workflow_state and workflow_state.values %}
+        {% set wv = workflow_state.values %}
+        {% if wv.get('score') %}
+        <div class="card mb-3">
+            <div class="card-header">AI Score</div>
+            <div class="card-body">
+                <strong>{{ wv.score.score }}/100</strong> — {{ wv.score.reasoning }}
+                {% if wv.score.strengths %}<br><span class="text-success">Strengths:</span> {{ wv.score.strengths | join(', ') }}{% endif %}
+                {% if wv.score.red_flags %}<br><span class="text-danger">Red flags:</span> {{ wv.score.red_flags | join(', ') }}{% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {% if wv.get('summary') %}
+        <div class="card mb-3">
+            <div class="card-header">AI Summary</div>
+            <div class="card-body">{{ wv.summary }}</div>
+        </div>
+        {% endif %}
+        {% if wv.get('offer_text') %}
+        <div class="card mb-3">
+            <div class="card-header">Offer Draft</div>
+            <div class="card-body"><pre style="white-space:pre-wrap;">{{ wv.offer_text }}</pre></div>
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <h5>Timeline</h5>
+        {% for e in events %}
+        <div class="timeline-event {% if e.actor == 'system' %}system{% elif e.actor == 'ai' %}ai{% endif %}">
+            <small class="text-muted">Day {{ e.clock_day }} · {{ e.actor }}</small><br>
+            <strong>{{ e.event }}</strong>
+            {% if e.reasoning %}<br><small>{{ e.reasoning }}</small>{% endif %}
+        </div>
+        {% endfor %}
+        {% if not events %}
+        <p class="text-muted">No events yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        {% set node_role_map = {
+            'recruiter_review': 'recruiter',
+            'approval_hm': 'hm',
+            'approval_cfo': 'cfo',
+            'approval_legal': 'legal',
+            'interview_schedule': 'candidate',
+            'interview_scorecard': 'interviewer',
+            'offer_recruiter_review': 'recruiter',
+            'offer_candidate_decision': 'candidate'
+        } %}
+
+        {% if interrupts and candidate.status == 'active' %}
+        <div class="card mb-3">
+            <div class="card-header bg-warning">⚡ Action Required</div>
+            <div class="card-body">
+                {% for intr in interrupts %}
+                {% set node = intr.node %}
+                {% set needed_role = node_role_map.get(node, '') %}
+                {% set intr_value = intr.value if intr.value is mapping else {} %}
+                <div class="mb-3">
+                    <strong>{{ intr_value.get('message', node) }}</strong>
+                    <span class="role-badge role-{{ needed_role }}">{{ needed_role }}</span>
+
+                    {% if needed_role == role %}
+                    <form method="post" action="/action/{{ candidate.id }}" class="mt-2">
+                        <input type="hidden" name="interrupt_id" value="{{ intr.id or '' }}">
+                        <div class="mb-2">
+                            <textarea name="comment" class="form-control form-control-sm" rows="2" placeholder="Comment (optional)"></textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            {% if node == 'interview_schedule' %}
+                            <button name="decision" value="approve" class="btn btn-success btn-sm flex-fill">Accept</button>
+                            <button name="decision" value="decline" class="btn btn-danger btn-sm flex-fill">Decline</button>
+                            {% elif node == 'offer_candidate_decision' %}
+                            <button name="decision" value="approve" class="btn btn-success btn-sm flex-fill">Accept Offer</button>
+                            <button name="decision" value="reject" class="btn btn-danger btn-sm flex-fill">Reject Offer</button>
+                            {% elif 'approval_' in node %}
+                            <button name="decision" value="approved" class="btn btn-success btn-sm flex-fill">Approve</button>
+                            <button name="decision" value="rejected" class="btn btn-danger btn-sm flex-fill">Reject</button>
+                            {% else %}
+                            <button name="decision" value="approve" class="btn btn-success btn-sm flex-fill">Approve</button>
+                            <button name="decision" value="reject" class="btn btn-danger btn-sm flex-fill">Reject</button>
+                            {% endif %}
+                        </div>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-info mt-2 py-1 px-2 small">
+                        Switch to <strong>{{ needed_role|upper }}</strong> role to act.
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% elif pending_nodes and candidate.status == 'active' %}
+        <div class="card mb-3">
+            <div class="card-header bg-warning">⚡ Pending</div>
+            <div class="card-body">
+                {% for node in pending_nodes %}
+                <div class="mb-2">
+                    <strong>{{ node }}</strong>
+                    {% set needed_role = node_role_map.get(node, '') %}
+                    <span class="role-badge role-{{ needed_role }}">{{ needed_role }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <a href="/" class="btn btn-outline-secondary btn-sm">← Back to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

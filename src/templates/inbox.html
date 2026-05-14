@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h4>Inbox — {{ role|upper }}</h4>
+{% if messages %}
+{% for m in messages %}
+<div class="card mb-2">
+    <div class="card-body py-2">
+        <div class="d-flex justify-content-between">
+            <strong>{{ m.subject }}</strong>
+            <span class="badge bg-secondary">{{ m.channel }} · Day {{ m.created_at_virtual }}</span>
+        </div>
+        <div class="small mt-1" style="white-space:pre-wrap;">{{ m.body }}</div>
+        {% if m.to_email %}<small class="text-muted">To: {{ m.to_email }}</small>{% endif %}
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<p class="text-muted">No messages for {{ role|upper }}.</p>
+{% endif %}
+{% endblock %}

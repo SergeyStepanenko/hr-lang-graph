@@ -1,0 +1,25 @@
+[project]
+name = "hr-recruiting-agent"
+version = "0.1.0"
+description = "HR Recruiting AI Agent MVP"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "jinja2>=3.1.4",
+    "python-multipart>=0.0.12",
+    "sqlmodel>=0.0.22",
+    "langgraph>=0.4.1",
+    "langgraph-checkpoint-sqlite>=2.0.6",
+    "instructor>=1.7.0",
+    "openai>=1.60.0",
+    "uvicorn>=0.34.0",
+    "aiosqlite>=0.20.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["ruff", "pytest", "pytest-asyncio"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
