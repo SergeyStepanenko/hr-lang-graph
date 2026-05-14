@@ -4,12 +4,6 @@
 
 ---
 
-## Контекст задания
-
-Recruiting flow — **долгоживущий и многоучастниковый процесс**. Между шагами проходят не секунды, а дни и недели. Система должна уметь ждать, сохраняя полный контекст, переживать рестарты, поддерживать параллельные ветки и возобновляться с точного места прерывания. Из этих требований и вытекают все технические решения ниже.
-
----
-
 ## Оптимальный процесс глазами бизнеса
 
 > *«Опишите, как вы видите оптимальный процесс…»*
@@ -67,46 +61,15 @@ Recruiting flow — **долгоживущий и многоучастников
 
 Правило агрегации: **все должны одобрить** → `stage = "interview"`; **любой вето** → rejection email кандидату + `END`.
 
-**Код fan-out** [src/workflow.py:48-70](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L48-L70):
+**Fan-out** — [src/workflow.py:48-70](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L48-L70): роутер-функция, которая возвращает список `Send()` — именно здесь граф разветвляется от одного потока на три независимых ветки апрувов. Каждая ветка живёт и ждёт самостоятельно.
 
-```python
-def route_after_recruiter(state: RecruitingState) -> list[Send] | str:
-    if state.get("stage") == "rejected":
-        return END
-    # fan-out: три параллельных аппрува
-    return [
-        Send("approval_hm",    {"candidate_id": ..., "clock_day": ...}),
-        Send("approval_cfo",   {"candidate_id": ..., "clock_day": ...}),
-        Send("approval_legal", {"candidate_id": ..., "clock_day": ...}),
-    ]
-```
-
-**Код fan-in** (reducer-аккумулятор) [src/workflow.py:29-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29-L45):
-
-```python
-class RecruitingState(TypedDict, total=False):
-    approval_results: Annotated[list[dict], operator.add]  # каждый апрув добавляет в список
-```
+**Fan-in** — [src/workflow.py:29-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29-L45): поле `approval_results` в `RecruitingState` аннотировано `operator.add` — это reducer, который автоматически накапливает результаты всех трёх веток в один список. Без него каждый следующий апрув перезаписывал бы предыдущий.
 
 ### Где система должна ждать внешний ответ
 
 7 точек прерывания — `interrupt()` внутри ноды останавливает граф, сериализует стейт в SQLite, освобождает поток. Граф не «спит» — ждёт HTTP-запроса, который может прийти через часы или недели.
 
-**Как это выглядит в коде** [src/nodes.py:90-133](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L90-L133):
-
-```python
-def recruiter_review(state: dict) -> dict:
-    # граф останавливается здесь. стейт сериализован в SqliteSaver.
-    # процесс не держит память/поток — ждёт ровно до момента,
-    # когда придёт HTTP /action/{candidate_id} с решением.
-    decision = interrupt({
-        "type": "recruiter_review",
-        "score": state.get("score"),
-        "message": "Review CV score and approve or reject.",
-    })
-    # сюда возвращаемся уже на следующем HTTP-запросе через дни/недели
-    return {"stage": "approvals" if decision["decision"] == "approve" else "rejected"}
-```
+**Как это выглядит в коде** — [src/nodes.py:90-133](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L90-L133): нода `recruiter_review` вызывает `interrupt()` — граф мгновенно сериализует весь стейт в SQLite и освобождает поток. Никакого polling, никакого зависшего процесса. Продолжение придёт через отдельный HTTP-запрос — через минуту или через неделю.
 
 Полный список точек ожидания:
 
@@ -155,23 +118,7 @@ def recruiter_review(state: dict) -> dict:
 
 Граф использует **conditional edges** — функции-роутеры, которые читают `state["stage"]` и возвращают имя следующей ноды (или `END`). Единственный источник правды — поле `stage`. Каждая нода возвращает `{"stage": "..."}`, роутер переходит дальше.
 
-**Код роутеров** [src/workflow.py:73-78](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L73-L78):
-
-```python
-def route_after_aggregate(state: RecruitingState) -> str:
-    if state.get("stage") == "rejected":
-        return END
-    if state.get("stage") == "interview":
-        return "interview_schedule"
-    return END
-
-def route_after_scorecard(state: RecruitingState) -> str:
-    if state.get("stage") == "rejected":
-        return END
-    return "offer_generate"
-```
-
-Нет `if event == "cfo_approved_do_X"`. Нет распределённого state machine по всему коду. Один граф, одна функция перехода на каждое ребро.
+**Код роутеров** — [src/workflow.py:73-78](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L73-L78): детерминированные функции, которые читают `state["stage"]` и возвращают имя следующей ноды. Нет `if event == "cfo_approved_do_X"`, нет распределённого state machine по всему коду — один граф, одна функция перехода на каждое ребро.
 
 ### Как обрабатываются исключения, задержки и отсутствие ответа
 
@@ -181,36 +128,13 @@ def route_after_scorecard(state: RecruitingState) -> str:
 
 **Принципиально важно**: граф **не принимает автоматических решений при таймауте** — только напоминает. HR-решения требуют человеческого суждения, автоматический reject из-за задержки недопустим.
 
-**Код nudge** [src/app.py:63-78](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/app.py#L63-L78):
-
-```python
-def _check_nudges(session, current_day: int):
-    for candidate in active_candidates:
-        ws = workflow.get_workflow_state(candidate.thread_id)
-        last_action = ws["values"].get("last_action_day", 0)
-        if current_day - last_action >= 3:
-            for node in ws["next"]:
-                role = _node_to_role(node)
-                comms.send_slack(session, candidate.id, "nudge", role,
-                    f"Reminder: {candidate.name} waiting for {node} "
-                    f"for {current_day - last_action} days.")
-```
-
-В production: virtual clock → реальный cron (APScheduler / Cloud Scheduler).
+**Код nudge** — [src/app.py:63-78](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/app.py#L63-L78): при каждом advance() часов перебирает всех активных кандидатов и отправляет Slack-напоминание если ответа не было 3+ дня. Граф при этом не трогается — система только уведомляет, решение остаётся за человеком. В production virtual clock заменяется реальным cron.
 
 #### Кандидат без email — флаг `no_contact`
 
 Если `parse_cv_contact` не нашёл email → `no_contact = True`. Все `send_email()` для кандидата пропускаются условно. Workflow продолжается полностью — только без email-коммуникаций с кандидатом.
 
-**Код** [src/nodes.py:38-62](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L38-L62):
-
-```python
-no_contact = contact.email is None
-if no_contact:
-    audit_log(session, candidate_id, "no_contact_warning", "system", "No email found")
-else:
-    comms.send_email(session, candidate_id, "candidate", "Application Received", ...)
-```
+**Код** — [src/nodes.py:38-62](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L38-L62): в `intake`-ноде, если парсер не нашёл email, устанавливается флаг `no_contact` и все последующие `send_email()` для кандидата пропускаются условно. Workflow продолжается полностью — edge case не блокирует процесс.
 
 #### Ошибки запуска workflow
 
@@ -242,158 +166,27 @@ else:
 | Observability | **LangSmith** | Трейсинг всех LLM вызовов, каждый workflow = именованный trace с метаданными |
 | Dev tools | **LangGraph Studio** | Визуальный граф (скриншот выше), пошаговое выполнение, инспекция стейта |
 
-### Структура кода
-
-```
-src/
-  workflow.py   — StateGraph, routing functions, checkpointer, start/resume
-  nodes.py      — node functions: intake, score_cv, recruiter_review, approvals, ...
-  llm.py        — ChatOpenAI client, все LLM-вызовы с run_name для LangSmith
-  comms.py      — send_email, send_slack, audit_log
-  clock.py      — virtual clock (advance/now)
-  models.py     — SQLModel: Candidate, Job, Message, AuditEvent, Clock
-  schemas.py    — Pydantic: CandidateContact, CVScore
-  app.py        — FastAPI routes, HTMX endpoints, nudge logic
-tests/
-  test_workflow_routing.py  — unit: routing functions (без БД, без LLM)
-  test_nodes.py             — integration: ноды с мок-LLM, in-memory DB
-  test_evals.py             — LLM evals: heuristic + LLM-as-judge (реальные API вызовы)
-```
-
 ### Ключевые фрагменты
-
-#### Стейт и resume через HTTP
-
-[src/workflow.py:29-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29-L45):
-
-```python
-class RecruitingState(TypedDict, total=False):
-    candidate_id: int
-    stage: str
-    score: dict
-    approvals: dict[str, str]
-    approval_results: Annotated[list[dict], operator.add]  # fan-in reducer
-    offer_text: str
-    clock_day: int
-    last_action_day: int
-```
-
-[src/workflow.py:189-216](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L189-L216) — resume после человеческого решения:
-
-```python
-def resume_workflow(thread_id: str, decision: str, resume_map: dict | None = None, ...) -> dict:
-    graph = get_graph()  # SqliteSaver — переживает рестарты
-    config = {"configurable": {"thread_id": thread_id},
-              "run_name": f"{label} — {node_name}: {decision}"}
-    if resume_map:
-        return graph.invoke(Command(resume=resume_map), config=config)
-    return graph.invoke(Command(resume={"decision": decision, "comment": comment}), config=config)
-```
-
-#### interrupt в ноде → решение человека → продолжение
-
-[src/nodes.py:90-133](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L90-L133):
-
-```python
-def recruiter_review(state: dict) -> dict:
-    # граф останавливается здесь, стейт сохранён в SQLite
-    decision = interrupt({
-        "type": "recruiter_review",
-        "score": state.get("score"),
-        "message": "Review CV score and approve or reject.",
-    })
-    if decision["decision"] == "reject":
-        rejection_text = llm.gen_rejection(candidate.name, decision.get("comment"))
-        comms.send_email(...)
-        return {"stage": "rejected"}
-    return {"stage": "approvals", "approvals": {"hm": "pending", "cfo": "pending", "legal": "pending"}}
-```
 
 #### Параллельный approval с fan-in
 
-[src/nodes.py:148-171](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L148-L171):
+[src/nodes.py:148-171](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L148-L171) — `_do_approval`: единая нода для всех трёх ролей (HM, CFO, Legal). Вызывает `interrupt()` и добавляет своё решение в `approval_results` через `operator.add` reducer. Благодаря reducer каждая ветка пишет свой результат независимо, без race condition.
 
-```python
-def _do_approval(state: dict, role: str) -> dict:
-    decision = interrupt({"type": f"approval_{role}", "role": role, ...})
-    human_decision = decision.get("decision", "approved")
-    comms.send_slack(..., f"{'✅' if human_decision == 'approved' else '❌'} {role.upper()} {human_decision}")
-    # operator.add reducer накапливает результаты всех трёх апрувов
-    return {"approval_results": [{"approver": role, "approval_decision": human_decision, ...}]}
-```
-
-[src/nodes.py:174-207](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L174-L207):
-
-```python
-def aggregate_approvals(state: dict) -> dict:
-    for r in state.get("approval_results", []):
-        approvals[r["approver"]] = r["approval_decision"]
-
-    if any(v == "rejected" for v in approvals.values()):
-        return {"stage": "rejected"}   # любой вето → rejection email + END
-    if all(v == "approved" for v in approvals.values()):
-        return {"stage": "interview"}  # все одобрили → интервью
-    return {"stage": "approvals"}      # ещё не все ответили
-```
+[src/nodes.py:174-207](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/nodes.py#L174-L207) — `aggregate_approvals`: собирает все три результата и применяет правило unanimous — любой `rejected` → veto и rejection email кандидату, все `approved` → переход в `interview`.
 
 #### LLM scoring со structured output
 
-[src/llm.py:34-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L34-L45):
-
-```python
-def score_cv(cv_text: str, job_title: str, job_requirements: str) -> CVScore:
-    chain = _get_llm().with_structured_output(CVScore).with_config(
-        run_name=f"Score CV for: {job_title}"  # виден в LangSmith с токенами и стоимостью
-    )
-    return chain.invoke([
-        SystemMessage(content=f"Score CV for: {job_title}.\nRequirements:\n{job_requirements}"),
-        HumanMessage(content=cv_text),
-    ])
-
-# Pydantic схема — src/schemas.py:13
-class CVScore(BaseModel):
-    score: int = Field(ge=0, le=100)
-    reasoning: str
-    red_flags: list[str]
-    strengths: list[str]
-```
+[src/llm.py:34-45](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/llm.py#L34-L45) + [src/schemas.py:13](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/schemas.py#L13) — `score_cv` использует `with_structured_output(CVScore)`: модель возвращает не свободный текст, а строго типизированный Pydantic объект с полями `score`, `reasoning`, `strengths`, `red_flags`. Никакого парсинга строк, результат всегда валиден и проверяем.
 
 #### LLM Evals — проверка качества AI-решений
 
 Два слоя: **heuristic** (детерминированные assertions) + **LLM-as-judge** (второй LLM оценивает качество первого).
 
-[tests/test_evals.py:59-68](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/tests/test_evals.py#L59-L68):
-
-```python
-def llm_judge(judge, question: str, context: str) -> bool:
-    response = judge.invoke([
-        SystemMessage(content="You are a strict evaluator. Answer only YES or NO."),
-        HumanMessage(content=f"Context:\n{context}\n\nQuestion: {question}"),
-    ])
-    return response.content.strip().upper().startswith("YES")
-
-# пример: rejection email не должен раскрывать внутренние формулировки кандидату
-def test_does_not_reveal_internal_reason_verbatim(self, judge):
-    result = llm.gen_rejection("Bob Smith", "Candidate is too junior and lacks focus")
-    assert llm_judge(judge,
-        'Does this email avoid repeating harsh internal notes like "too junior" verbatim?',
-        result,
-    )
-```
+[tests/test_evals.py:59-68](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/tests/test_evals.py#L59-L68) — `llm_judge`: утилита для LLM-as-judge тестирования, где второй LLM проверяет вывод первого, отвечая YES/NO на конкретный вопрос. Позволяет тестировать нюансы, которые регулярным выражением не поймать — например, что rejection email не раскрывает внутренние формулировки типа "too junior" кандидату.
 
 ### Прозрачность — полный audit trail
 
 > *«Весь флоу должен быть контролируемым и прозрачным, независимо от того, выполняется ли он автоматически, ожидает наступления события в будущем или требует действий со стороны пользователя.»*
 
-Каждое действие — и автоматическое, и человеческое — пишется в `audit.jsonl` через [src/comms.py:78-113](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/comms.py#L78-L113):
-
-```json
-{"event": "cv_scored",              "actor": "ai",        "reasoning": "Score: 87/100", "clock_day": 0}
-{"event": "recruiter_approved",     "actor": "recruiter", "reasoning": "Good fit",      "clock_day": 0}
-{"event": "approval_cfo_rejected",  "actor": "cfo",       "reasoning": "Budget freeze", "clock_day": 2}
-{"event": "approvals_vetoed",       "actor": "system",    "reasoning": "...",           "clock_day": 2}
-{"event": "offer_accepted",         "actor": "candidate", "reasoning": "",              "clock_day": 5}
-```
-
-Кто что решил, когда (виртуальный день), по какой причине — полный след для HR-аудита.
+Каждое действие — и автоматическое, и человеческое — пишется в `audit.jsonl` через [src/comms.py:78-113](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/comms.py#L78-L113): функция `audit_log` записывает actor, event, reasoning и виртуальный день для каждого события (AI-решение, апрув, отказ, отправка письма). Единственный источник правды о том, кто, когда и почему принял решение — полный след для HR-аудита.
 
