@@ -81,7 +81,7 @@ def route_after_recruiter(state: RecruitingState) -> list[Send] | str:
     ]
 ```
 
-**Код fan-in** (reducer-аккумулятор) [src/workflow.py:40](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L40):
+**Код fan-in** (reducer-аккумулятор) [src/workflow.py:29](https://github.com/SergeyStepanenko/hr-lang-graph/blob/9268ed0/src/workflow.py#L29):
 
 ```python
 class RecruitingState(TypedDict, total=False):
